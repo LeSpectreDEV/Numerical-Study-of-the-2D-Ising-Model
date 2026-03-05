@@ -1,0 +1,438 @@
+# Simulation numérique en physique statistique.py
+
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import time
+
+class Modele_Ising :
+
+    def __init__(self, taille, energie_interaction, champ):
+        self.N= taille
+        self.model = np.random.choice([-1, 1], size=(self.N,
+self.N))
+        self.J=energie_interaction
+        self.h=champ
+        self.m = np.sum(self.model)
+        def Energie():
+            E_interaction = 0
+            E_champ = 0
+
+            for i in range(self.N):
+                for j in range(self.N):
+                    s = self.model[i, j]
+                    # Somme des 4 voisins avec conditions périodiques (modulo N)
+                    voisins = (
+                        self.model[(i+1)%self.N, j] +
+                        self.model[(i-1)%self.N, j] +
+                        self.model[i, (j+1)%self.N] +
+                        self.model[i, (j-1)%self.N]
+                    )
+                    E_interaction += -self.J * s * voisins
+                    E_champ += -self.h * s
+
+            # On divise l'interaction par 2 (pour ne pas compter les paires en double)
+            E = (E_interaction / 2) + E_champ
+            return E
+        self.E = Energie()
+
+    def Energie(self):
+        E_interaction = 0
+        E_champ = 0
+
+        for i in range(self.N):
+            for j in range(self.N):
+                s = self.model[i, j]
+                # Somme des 4 voisins avec conditions périodiques (modulo N)
+                voisins = (
+                    self.model[(i+1)%self.N, j] +
+                    self.model[(i-1)%self.N, j] +
+                    self.model[i, (j+1)%self.N] +
+                    self.model[i, (j-1)%self.N]
+                )
+                E_interaction += -self.J * s * voisins
+                E_champ += -self.h * s
+
+        # On divise l'interaction par 2 (pour ne pas compter les paires en double)
+        E = (E_interaction / 2) + E_champ
+        return E
+
+    def plot(self):
+        plt.imshow(self.model, cmap='coolwarm')
+        plt.colorbar()
+        plt.show()
+
+    def magnetisation(self):
+        return self.m/(self.N**2)
+
+    def Metropolis(self,beta):
+        i= np.random.randint(0,self.N)
+        j= np.random.randint(0,self.N)
+
+        s= self.model[i][j]
+        voisins = (
+            self.model[(i+1)%self.N, j] +
+            self.model[(i-1)%self.N, j] +
+            self.model[i, (j+1)%self.N] +
+            self.model[i, (j-1)%self.N]
+        )
+
+        diffE= 2 * s * (self.J * voisins + self.h)
+
+# Critère de Metropolis
+        if diffE < 0:
+            self.m -= 2*self.model[i, j]
+            self.E += diffE
+            self.model[i, j] *= -1 # On accepte toujours si l'énergie baisse
+        else:
+            R = np.exp(-beta * diffE)
+            p = np.random.uniform(0.0, 1.0)
+
+            # Si p <= R, on accepte le changement
+            if p <= R:
+                self.m -= 2*self.model[i, j]
+                self.E+= diffE
+                self.model[i, j] *= -1
+
+
+
+## Gemini pour visualiser
+
+def lancer_animation(sim : Modele_Ising, taille=50,
+beta=0.5, etapes=100000):
+
+    # 2. Préparation de la figure
+    plt.ion() # Active le mode interactif (le code continue après plt.show)
+    fig, ax = plt.subplots()
+
+    # On crée l'image une première fois et on garde une référence (img)
+    img = ax.imshow(sim.model, cmap='coolwarm', vmin=-1,
+vmax=1)
+    plt.colorbar(img)
+    plt.title(f"Ising 2D - Beta: {beta}")
+
+    # 3. Boucle de simulation
+    for k in range(etapes):
+        sim.Metropolis(beta)
+
+        # ASTUCE PERFORMANCE :
+        # On ne met à jour l'image que tous les N*N étapes (1 pas de Monte Carlo)
+        # ou tous les 1000 pas, sinon l'animation sera trop lente.
+        if k % 1000 == 0:
+            # On met à jour les données de l'image (pas besoin de refaire le plot)
+            img.set_data(sim.model)
+
+            # Mise à jour du titre avec l'étape
+            ax.set_title(f"Ising 2D - Beta: {beta} - Étape:
+{k}")
+
+            # Demande à Matplotlib de redessiner et fait une
+micro-pause
+            plt.draw()
+            plt.pause(0.001)
+
+    plt.ioff() # Désactive le mode interactif à la fin
+    plt.show() # Affiche l'état final et bloque pour qu'on
+puisse regarder
+
+## Pour lancer :
+sim = Modele_Ising(taille=100, energie_interaction=1,
+champ=0)
+lancer_animation(sim,taille=100, beta=0.25, etapes=500000)
+
+## Mesure de grandeurs physique : Méthode Monte Carlo
+
+def thermalisation (modele,beta):
+    for i in range (10000*(modele.N**2)):
+        modele.Metropolis(beta)
+
+def mesures_MC(modele,beta,pas, nb_mesures): # Mesures de grandeurs par la méthodes de Monte-Carlo
+    E = np.zeros(nb_mesures) # mesures d'énergie
+    M = np.zeros(nb_mesures) # mesures d'aimantation
+
+    thermalisation (modele, beta)
+
+    for i in range(nb_mesures):
+        for _ in range(pas):
+            modele.Metropolis(beta)
+        E[i]=modele.E
+        M[i]=modele.m
+
+    E_mesure = np.mean(E)
+    M_mesure = np.mean (M/modele.N**2)
+    Msquare  = np.mean ((M/modele.N**2)**2)
+    Mabs     = np.mean (np.abs(M)/modele.N**2)
+
+    Esquare  = np.mean (E**2)
+    return E_mesure, M_mesure, Esquare, Msquare, Mabs
+
+
+def evolution_thermique(taille,pas,nb_mesures, T_i, T_f, pas_T):
+    T           = np.arange(T_f,T_i,pas_T)
+    E_mes       = np.zeros(len(T))
+    M_mes       = np.zeros(len(T))
+    Esquare_mes = np.zeros(len(T))
+    Msquare_mes = np.zeros(len(T))
+    Mabs_mes    = np.zeros(len(T))
+    modele      = Modele_Ising(taille,
+energie_interaction=1, champ=0)
+
+
+    for i in tqdm(range(len(T))):
+        beta= 1/T[i]
+        E_mes[i],M_mes[i],Esquare_mes[i],Msquare_mes[i],Mabs_mes[i]= mesures_MC(modele,beta,pas,nb_mesures)
+
+    return E_mes, M_mes, Esquare_mes, Msquare_mes,Mabs_mes
+
+
+## Finite Scale Sizing
+
+Tc_exact = 2 / np.log(1 + np.sqrt(2))
+
+def susceptibilite(beta, N, Msquare, Mabs):
+    return beta * N**2 * (Msquare - Mabs**2)
+
+def capacite_calorifique(beta, N, Esquare, Emean):
+    return (beta**2 / N**2) * (Esquare - Emean**2)
+
+
+def finite_size_scaling(L_list, nb_mesures):
+
+    M_tc = []
+    Chi_tc = []
+    C_tc = []
+
+    for L in tqdm(L_list):
+
+        modele = Modele_Ising(L, energie_interaction=1, champ=0)
+        beta = 1 / Tc_exact
+        pas = 10*(L**2)
+
+        E, M, Esq, Msq, Mabs = mesures_MC(modele, beta, pas, nb_mesures)
+
+        chi = susceptibilite(beta, L, Msq, Mabs)
+        C = capacite_calorifique(beta, L, Esq, E)
+
+        M_tc.append(Mabs)
+        Chi_tc.append(chi)
+        C_tc.append(C)
+
+    return np.array(M_tc), np.array(Chi_tc), np.array(C_tc)
+
+def fit_exposant(L_list, observable):
+
+    logL = np.log(L_list)
+    logObs = np.log(observable)
+
+    coeffs = np.polyfit(logL, logObs, 1)
+    pente = coeffs[0]
+
+    return pente
+
+## Test
+
+# Tailles système
+L_list = np.array([4,8,16, 24, 32, 48, 64])
+
+M_tc, Chi_tc, C_tc = finite_size_scaling(L_list,nb_mesures=2000)
+
+## Extraction exposants
+beta_sur_nu = -fit_exposant(L_list, M_tc)
+gamma_sur_nu = fit_exposant(L_list, Chi_tc)
+
+print("β/ν =", beta_sur_nu)
+print("γ/ν =", gamma_sur_nu)
+
+plt.figure()
+plt.loglog(L_list, M_tc, 'o-', label="Magnetisation")
+plt.loglog(L_list, Chi_tc, 's-', label="Susceptibilité")
+plt.xlabel("L")
+plt.legend()
+plt.show()
+
+## Algorithmes par amas
+
+## Algorithme de Wolff
+from collections import deque
+
+def voisins (i,j, modele):
+    return [((i+1)%modele.N, j),((i-1)%modele.N, j),(i, (j+1)%modele.N),(i, (j-1)%modele.N)]
+
+
+def Wolff_algo_etape(modele, beta):
+
+    # 1. Choisir une graine au hasard
+    i_start = np.random.randint(0, modele.N)
+    j_start = np.random.randint(0, modele.N)
+    signe_cible = modele.model[i_start, j_start]
+
+    proba = 1 - np.exp(-2 * modele.J * beta)
+
+    # 2. Initialiser la file et le cluster
+    a_visiter = deque([(i_start, j_start)])
+    cluster = {(i_start, j_start)}
+
+    while a_visiter:
+        i, j = a_visiter.popleft()
+
+        for u, v in voisins(i, j, modele):
+            # CONDITION : même signe ET pas encore dans le cluster
+            if modele.model[u, v] == signe_cible:
+                if (u, v) not in cluster:
+                    if np.random.rand() < proba:
+                        a_visiter.append((u, v))
+                        cluster.add((u, v))
+
+    # 3. Retournement et mise à jour de la magnétisation
+    taille_cluster = len(cluster)
+    modele.m -= 2 * taille_cluster * signe_cible
+
+    for (u, v) in cluster:
+        modele.model[u, v] *= -1
+
+
+
+    return taille_cluster
+
+def thermalisation_W (modele, beta):
+    nb_spin_returned = 0
+    while nb_spin_returned < 200*(modele.N**2):
+        nb_spin_returned += Wolff_algo_etape(modele, beta)
+
+
+def mesures_W(modele, beta, pas, nb_mesures):
+
+    E = np.zeros(nb_mesures) # mesures d'énergie
+    M = np.zeros(nb_mesures) # mesures d'aimantation
+
+    thermalisation_W (modele, beta)
+
+    for i in range(nb_mesures):
+
+        nb_spin_returned = 0
+        while nb_spin_returned < pas :
+            nb_spin_returned += Wolff_algo_etape(modele, beta)
+
+
+        modele.E = modele.Energie()
+        E[i]=modele.E
+        M[i]=modele.m
+
+    E_mesure = np.mean(E)
+    M_mesure = np.mean (M/modele.N**2)
+    Msquare  = np.mean ((M/modele.N**2)**2)
+    Mabs     = np.mean (np.abs(M)/modele.N**2)
+
+    Esquare  = np.mean (E**2)
+    return E_mesure, M_mesure, Esquare, Msquare, Mabs
+
+## Finite Scale Sizing : Méthode Wolff
+
+
+Tc_exact = 2 / np.log(1 + np.sqrt(2))
+
+def susceptibilite(beta, N, Msquare, Mabs):
+    return beta * N**2 * (Msquare - Mabs**2)
+
+def capacite_calorifique(beta, N, Esquare, Emean):
+    return (beta**2 / N**2) * (Esquare - Emean**2)
+
+
+def finite_size_scaling_W (L_list, nb_mesures):
+
+    M_tc = []
+    Chi_tc = []
+    C_tc = []
+
+    for L in tqdm(L_list):
+
+        modele = Modele_Ising(L, energie_interaction=1, champ=0)
+        beta = 1 / Tc_exact
+        pas = 2*(L**2)
+
+        E, M, Esq, Msq, Mabs = mesures_W(modele, beta, pas, nb_mesures)
+
+        chi = susceptibilite(beta, L, Msq, Mabs)
+        C = capacite_calorifique(beta, L, Esq, E)
+
+        M_tc.append(Mabs)
+        Chi_tc.append(chi)
+        C_tc.append(C)
+
+    return np.array(M_tc), np.array(Chi_tc), np.array(C_tc)
+
+def fit_exposant(L_list, observable):
+
+    logL = np.log(L_list)
+    logObs = np.log(observable)
+
+    coeffs = np.polyfit(logL, logObs, 1)
+    pente = coeffs[0]
+
+    return pente
+
+## Test_W
+
+# Tailles système
+L_list = np.array([4,8,16, 24, 32, 48, 64, 128, 252, 504, 1012])
+
+M_tc, Chi_tc, C_tc = finite_size_scaling_W(L_list,nb_mesures=200)
+
+## Extraction exposants W
+beta_sur_nu = -fit_exposant(L_list, M_tc)
+gamma_sur_nu = fit_exposant(L_list, Chi_tc)
+
+print("β/ν =", beta_sur_nu)
+print("γ/ν =", gamma_sur_nu)
+
+plt.figure()
+plt.loglog(L_list, M_tc, 'o-', label="Magnetisation")
+plt.loglog(L_list, Chi_tc, 's-', label="Susceptibilité")
+plt.xlabel("L")
+plt.legend()
+plt.show()
+
+# Remarque temps de calcul linéaire avec L ?
+
+## test W 2
+L_list1 = np.array([5,10,25,50,100,200,250,300,450,500])
+
+M_tc, Chi_tc, C_tc = finite_size_scaling_W(L_list1,nb_mesures=2000)
+
+
+## Extraction exposants W1
+beta_sur_nu = -fit_exposant(L_list1, M_tc)
+gamma_sur_nu = fit_exposant(L_list1, Chi_tc)
+
+print("β/ν =", beta_sur_nu)
+print("γ/ν =", gamma_sur_nu)
+
+plt.figure()
+plt.loglog(L_list1, M_tc, 'o-', label="Magnetisation")
+plt.loglog(L_list1, Chi_tc, 's-', label="Susceptibilité")
+plt.xlabel("L")
+plt.legend()
+plt.show()
+
+## test W 3
+L_list2 = np.array([2,4,8,16,32,64,128,256,512,1024,2024])
+
+M_tc, Chi_tc, C_tc = finite_size_scaling_W(L_list2,nb_mesures=20)
+
+
+## Extraction exposants W1
+beta_sur_nu = -fit_exposant(L_list2, M_tc)
+gamma_sur_nu = fit_exposant(L_list2, Chi_tc)
+
+print("β/ν =", beta_sur_nu)
+print("γ/ν =", gamma_sur_nu)
+
+plt.figure()
+plt.loglog(L_list2, M_tc, 'o-', label="Magnetisation")
+plt.loglog(L_list2, Chi_tc, 's-', label="Susceptibilité")
+plt.xlabel("L")
+plt.legend()
+plt.show()
+
+
+
