@@ -2,6 +2,7 @@ import taichi as ti
 import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import time
 
 # Initialisation pour AMD sous Windows
 ti.init(arch=ti.vulkan)
@@ -29,7 +30,44 @@ visit_tag = ti.field(dtype=ti.i32, shape=NUM_SIMS)
 # Sorties pour les mesures
 M_out = ti.field(dtype=ti.i32, shape=NUM_SIMS)
 
-"""@ti.kernel
+
+# --- Mesures de temps d'exécution ---
+def format_execution_time(seconds: float) -> str:
+    """
+    Convertit un temps d'exécution en secondes en une chaîne de caractères lisible.
+    Gère les millisecondes, secondes, minutes, heures et jours.
+    """
+    if seconds < 0:
+        return "0 ms"
+        
+    # Pour les temps d'exécution inférieurs à une seconde
+    if seconds < 1:
+        return f"{seconds * 1000:.2f} ms"
+
+    # Calcul des différentes unités avec divmod
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+
+    # Construction de la chaîne de résultat
+    parts = []
+    if days > 0:
+        parts.append(f"{int(days)} d")
+    if hours > 0:
+        parts.append(f"{int(hours)} h")
+    if minutes > 0:
+        parts.append(f"{int(minutes)} m")
+    
+    # On ajoute toujours les secondes s'il y a un reste, ou si le temps est exactement 0
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds:.2f} s")
+
+    return " ".join(parts)
+
+
+"""
+# Intialisation aléatoire
+@ti.kernel
 def init_simulations(current_L: ti.i32):
     '''Initialise aléatoirement toutes les grilles et remet les tags à zéro.'''
     for sim, i, j in ti.ndrange(NUM_SIMS, current_L, current_L):
@@ -42,7 +80,7 @@ def init_simulations(current_L: ti.i32):
     for sim in range(NUM_SIMS):
         visit_tag[sim] = 0"""
 
-
+# Initialisation à T = 0
 @ti.kernel
 def init_simulations(current_L: ti.i32):
     """Initialisation à T=0 (état ordonné) pour accélérer la thermalisation Wolff."""
@@ -188,9 +226,9 @@ if __name__ == "__main__":
 
 def run_fss_gpu_batched():
     # Paramètres d'exécution
-    L_list = np.array([16, 32, 64, 128, 256, 512, 1024])
+    L_list = np.array([16, 32, 64, 128, 256, 512])#, 1024])
     TOTAL_SIMS_TARGET = 2000
-    VRAM_BUDGET_GB = 3.0 # Limite stricte à 3 Go de VRAM
+    VRAM_BUDGET_GB = 4.0 # Limite stricte à 3 Go de VRAM
     
     # Paramètres physiques
     J = 1.0
@@ -204,6 +242,8 @@ def run_fss_gpu_batched():
     for L in L_list:
         print(f"\n=== Traitement de la grille {L}x{L} ===")
         
+        start_time = time.time() # mesure du temps d'exécution
+
         # 1. Calcul de l'encombrement VRAM et paramétrage des batchs
         bytes_per_spin = 1 + 2 + 2 + 4 # i8 + i16 + i16 + i32 = 9 octets
         bytes_per_sim = bytes_per_spin * (L**2)
@@ -214,7 +254,7 @@ def run_fss_gpu_batched():
         # NOUVEAU : Limite de temps de calcul (TDR Windows)
         # On interdit de calculer plus de 15 millions de spins en même temps.
         # Vous pouvez monter/descendre cette valeur si ça plante encore ou si c'est trop lent.
-        MAX_SPINS_PER_BATCH = 150_000_000 
+        MAX_SPINS_PER_BATCH = 2_000_000_000 
         max_sims_compute = int(MAX_SPINS_PER_BATCH / (L**2))
         
         # On prend la limite la plus stricte (toujours au moins 1)
@@ -300,8 +340,10 @@ def run_fss_gpu_batched():
         all_m_abs = []
         
         # Adaptation de la thermalisation à la taille du réseau
-        nb_etapes_totales = 200 + L#int(10 * L)
+        nb_etapes_totales = 100 #int(10 * L)
         etapes_par_bloc = max(1, nb_etapes_totales // 500)
+
+        print(f"Nombre de pas de l'algorithme : {nb_etapes_totales}.")
         
         for b in range(num_batches):
             print(f"  -> Batch {b+1}/{num_batches} en cours...", end="\r")
@@ -319,6 +361,7 @@ def run_fss_gpu_batched():
             all_m_abs.extend(batch_m_abs) # On allonge la liste de nos échantillons
             
         print(f"  -> {num_batches} batch(s) terminés !                     ")
+        print(f"Temps d'exécution : {format_execution_time(time.time()-start_time)}.")
         
         # 5. Agréger et calculer les moyennes sur l'ensemble des données
         all_m_abs_arr = np.array(all_m_abs)
@@ -351,5 +394,21 @@ def run_fss_gpu_batched():
     print(f"β/ν obtenu = {beta_sur_nu:.4f} (Théorie : 0.125)")
     print(f"γ/ν obtenu = {gamma_sur_nu:.4f} (Théorie : 1.750)")
 
+    # --- Graphique ---
+    plt.figure(figsize=(8, 5))
+    plt.loglog(L_list, M_tc_list, 'o-', label=f"Magnétisation (Pente = {-beta_sur_nu:.4f})")
+    plt.loglog(L_list, Chi_tc_list, 's-', label=f"Susceptibilité (Pente = {gamma_sur_nu:.4f})")
+    plt.xlabel("L (Taille du réseau)")
+    plt.ylabel("Observable")
+    plt.title("Finite Size Scaling à $T_c$ - GPU Wolff")
+    plt.grid(True, which="both", ls="--")
+    plt.legend()
+    
+    # Enregistrement du fichier plutôt que plt.show() pour l'environnement GPU
+    plt.savefig("fss_wolff_gpu.png")
+    print("Graphique sauvegardé sous 'fss_wolff_gpu.png'")
+
 if __name__ == "__main__":
+    total_start_time = time.time() # mesure du temps d'exécution
     run_fss_gpu_batched()
+    print(f"\n Temps d'exécution global : {format_execution_time(time.time()-total_start_time)}.")
