@@ -102,6 +102,90 @@ class Modele_Ising:
                         
         return cluster_size # <--- RENVOIE LA TAILLE
 
+    def Niedermayer_step(self, beta, E0):
+        """
+        Effectue une étape de l'algorithme de Niedermayer.
+        Retourne la taille de l'amas exploré (pour l'horloge MCS).
+        """
+        # 1. Probabilité d'ajout et facteur d'acceptation
+        p_add = 1.0 - np.exp(-beta * E0)
+        delta_E_factor = beta * (E0 - 2.0 * self.J)
+        
+        # Tirage de la graine
+        i = np.random.randint(0, self.N)
+        j = np.random.randint(0, self.N)
+        seed_spin = self.model[i, j]
+        
+        # 2. Initialisation des structures de données
+        stack = [(i, j)]
+        cluster = [(i, j)]
+        
+        # Matrice booléenne pour un accès O(1) ultra-rapide
+        in_cluster = np.zeros((self.N, self.N), dtype=bool)
+        in_cluster[i, j] = True
+        
+        # 3. Construction de l'amas
+        while stack:
+            cy, cx = stack.pop()
+            
+            neighbors = [
+                ((cy - 1) % self.N, cx),
+                ((cy + 1) % self.N, cx),
+                (cy, (cx - 1) % self.N),
+                (cy, (cx + 1) % self.N)
+            ]
+            
+            for ny, nx in neighbors:
+                if not in_cluster[ny, nx]:
+                    if self.model[ny, nx] == seed_spin:
+                        if np.random.rand() < p_add:
+                            in_cluster[ny, nx] = True
+                            stack.append((ny, nx))
+                            cluster.append((ny, nx))
+                            
+        # 4. Évaluation de la frontière (Boundary)
+        Np = 0 # Liens parallèles sur le bord
+        Na = 0 # Liens anti-parallèles sur le bord
+        
+        # On parcourt uniquement les spins de l'amas pour vérifier leurs voisins
+        for cy, cx in cluster:
+            neighbors = [
+                ((cy - 1) % self.N, cx),
+                ((cy + 1) % self.N, cx),
+                (cy, (cx - 1) % self.N),
+                (cy, (cx + 1) % self.N)
+            ]
+            for ny, nx in neighbors:
+                # Si le voisin n'est pas dans l'amas, c'est un lien de frontière
+                if not in_cluster[ny, nx]:
+                    if self.model[ny, nx] == seed_spin:
+                        Np += 1
+                    else:
+                        Na += 1
+                        
+        # 5. Bilan détaillé et basculement
+        # Calcul de la probabilité d'acceptation A
+        power = delta_E_factor * (Np - Na)
+        
+        # Prévention d'overflow si la puissance est positive et très grande
+        if power >= 0:
+            A = 1.0 
+        else:
+            A = np.exp(power)
+            
+        # Si le mouvement est accepté, on bascule tout
+        if np.random.rand() < A:
+            # Récupération rapide des indices x et y
+            ys = [pos[0] for pos in cluster]
+            xs = [pos[1] for pos in cluster]
+            
+            self.model[ys, xs] *= -1
+            self.m += 2 * seed_spin * len(cluster) * (-1) # Mise à jour de l'aimantation
+            
+        # On retourne la taille de l'amas (qu'il soit accepté ou rejeté !)
+        # Cela garantit que 1 MCS correspond bien à un effort de calcul de L^2 spins visités
+        return len(cluster)
+
 def thermalisation (modele,beta):
     for i in range (10000*(modele.N**2)):
         if i % (1000*(modele.N**2)) == 0:
@@ -366,6 +450,7 @@ t_max = int(4.0 * tau_int)
 tau_exp, tau_exp_err = compute_tau_exp(rho, t_min, t_max)
 print(f"Temps de corrélation exponentiel : {tau_exp:.2f} +/- {tau_exp_err:.2f} MCS")
 """
+
 """
 #
 # (Houdayer) Test pour différentes tailles de grille pour estimer z
@@ -396,6 +481,8 @@ z_estime, erreur_z = estimate_dynamic_exponent_z(tailles_L, mesures_tau_int)
 print(f"\nRésultat final : z = {z_estime:.3f} +/- {erreur_z:.3f}")"""
 
 
+
+"""
 #
 # Test complet avec Wolff pour différentes tailles de grille pour estimer z
 #
@@ -436,3 +523,50 @@ for L in tailles_L:
 # Calcul final
 z_estime, erreur_z = estimate_dynamic_exponent_z(tailles_L, mesures_tau_int)
 print(f"\nRésultat final : z = {z_estime:.3f} +/- {erreur_z:.3f}")
+"""
+
+
+#
+# Test complet avec Niedermayer pour différentes tailles de grille pour estimer z
+#
+
+valeurs_E0 = [-1/2, -1/4, 0, 1/4]
+tailles_L = [50, 100, 150, 200]
+mesures_tau_int = [[0 for j in range(len(tailles_L))] for i in range(len(valeurs_E0))]
+beta_critique = 1.0 / 2.269185
+valeurs_E0 = [-1/2, -1/4, 0, 1/4]
+
+for k, E0 in enumerate(valeurs_E0):
+    for j, L in enumerate(tailles_L):
+        print(f"\nSimulation Niedermayer pour L = {L} et E0 = {E0}...")
+        modele = Modele_Ising(taille=L, energie_interaction=1.0, champ=0.0)
+        
+        # 1. Thermalisation équivalente à 100 MCS (bien suffisant avec Wolff)
+        for _ in range(100):
+            spins_flipped = 0
+            while spins_flipped < L**2:
+                spins_flipped += modele.Niedermayer_step(beta_critique, E0)
+                
+        # 2. Mesures
+        nb_mesures = 1000
+        magnetizations = np.zeros(nb_mesures)
+        
+        for i in range(nb_mesures):
+            spins_flipped = 0
+            # On définit 1 "pas" d'horloge = avoir retourné au moins L^2 spins
+            while spins_flipped < L**2:
+                spins_flipped += modele.Niedermayer_step(beta_critique, E0)
+                
+            magnetizations[i] = abs(modele.m) 
+            
+        # 3. Calcul de tau_int
+        rho = compute_autocorr_fft(magnetizations)
+        tau_int = compute_tau_int(rho, c=5.0)
+        
+        print(f"-> tau_int obtenu : {tau_int:.2f} MCS")
+        mesures_tau_int[k][j] = tau_int
+
+# Calcul final
+for i, E0 in enumerate(valeurs_E0):
+    z_estime, erreur_z = estimate_dynamic_exponent_z(tailles_L, mesures_tau_int[i])
+    print(f"\nRésultat final (pour E0 = {E0}) : z = {z_estime:.3f} +/- {erreur_z:.3f}")
