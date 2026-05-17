@@ -167,16 +167,19 @@ def estimate_dynamic_exponent_z(L_values, tau_values):
     return z, z_err
 
 
-"""
+
 #
 # Metropolis dynamic exponent
 #
 tailles_L = [16, 32, 48, 64]
-tau = [291.46, 1248.31, 3766.30, 5876.79]
+#tau = [291.46, 1248.31, 3766.30, 5876.79]
+tau = [10.27, 42.64, 
 estimate_dynamic_exponent_z(tailles_L, tau)
+
+
+
+
 """
-
-
 #
 # Wolff décroissance de 
 #
@@ -218,3 +221,4 @@ plt.title(r"Evolution of the autocorrelation fonction $\rho$", fontsize=14)
 plt.legend(fontsize=11)
 plt.grid(True, alpha=0.7)
 plt.show()
+"""

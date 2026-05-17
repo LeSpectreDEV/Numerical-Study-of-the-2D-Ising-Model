@@ -401,15 +401,15 @@ def estimate_dynamic_exponent_z(L_values, tau_values):
     
     # 3. Tracé du graphique de vérification
     plt.figure(figsize=(8, 5))
-    plt.plot(log_L, log_tau, 'o', color='royalblue', label="Mesures $\\tau_{int}$", markersize=8)
+    plt.plot(log_L, log_tau, 'o', color='royalblue', label="Measures $\\tau_{int}$", markersize=8)
     
     # Droite d'ajustement
     fit_line = z * log_L + intercept
-    plt.plot(log_L, fit_line, 'r--', label=f"Ajustement : $z = {z:.3f} \pm {z_err:.3f}$")
+    plt.plot(log_L, fit_line, 'r--', label=f"Fitting : $z = {z:.3f} \pm {z_err:.3f}$")
     
     plt.xlabel("$\ln(L)$", fontsize=12)
     plt.ylabel("$\ln(\\tau)$", fontsize=12)
-    plt.title("Estimation de l'exposant dynamique $z$", fontsize=14)
+    #plt.title("Estimation de l'exposant dynamique $z$", fontsize=14)
     plt.legend(fontsize=11)
     plt.grid(True, linestyle=':', alpha=0.7)
     plt.show()
@@ -525,7 +525,171 @@ z_estime, erreur_z = estimate_dynamic_exponent_z(tailles_L, mesures_tau_int)
 print(f"\nRésultat final : z = {z_estime:.3f} +/- {erreur_z:.3f}")
 """
 
+#
+# Test complet avec Wolff et estimation rigoureuse des incertitudes
+#
 
+
+def generate_block_bootstrap_sample(data, block_size):
+    """
+    Génère un nouvel échantillon de même taille via Moving Block Bootstrap.
+    """
+    N = len(data)
+    n_blocks = N // block_size
+    
+    # Création du tableau pour le nouvel échantillon
+    boot_sample = np.zeros(n_blocks * block_size)
+    
+    for i in range(n_blocks):
+        # Tirage d'un point de départ aléatoire pour le bloc
+        start_idx = np.random.randint(0, N - block_size + 1)
+        # Copie du bloc dans le nouvel échantillon
+        boot_sample[i*block_size : (i+1)*block_size] = data[start_idx : start_idx + block_size]
+        
+    return boot_sample
+
+def estimate_z_bootstrap_end_to_end(dict_magnetizations, tailles_L, n_boot=200, block_size=500):
+    """
+    Estime l'exposant z et son incertitude par bootstrapping global,
+    et affiche le nuage de points de tous les tirages.
+    """
+    z_bootstrap_values = np.zeros(n_boot)
+    intercept_bootstrap_values = np.zeros(n_boot) # Pour tracer la droite moyenne
+    
+    # Dictionnaire pour stocker TOUS les tau de chaque itération
+    all_tau_boot = {L: [] for L in tailles_L}
+    
+    log_L = np.log(tailles_L)
+    
+    print(f"Lancement du Bootstrap ({n_boot} itérations)...")
+    
+    for b in range(n_boot):
+        tau_int_boot = []
+        
+        # 1. Pour chaque taille L, on rééchantillonne et on calcule tau
+        for L in tailles_L:
+            data = dict_magnetizations[L]
+            boot_data = generate_block_bootstrap_sample(data, block_size)
+            
+            rho = compute_autocorr_fft(boot_data)
+            tau = compute_tau_int(rho, c=5.0)
+            
+            tau_int_boot.append(tau)
+            all_tau_boot[L].append(tau) # Sauvegarde du point pour le graphique
+            
+        # 2. Régression linéaire sur cet univers virtuel
+        log_tau = np.log(tau_int_boot)
+        slope, intercept, _, _, _ = linregress(log_L, log_tau)
+        
+        # 3. Stockage de la pente et de l'ordonnée à l'origine
+        z_bootstrap_values[b] = slope
+        intercept_bootstrap_values[b] = intercept
+        
+        if (b + 1) % 50 == 0:
+            print(f"Progression : {b + 1} / {n_boot}")
+            
+    # Calcul des statistiques finales
+    z_mean = np.mean(z_bootstrap_values)
+    z_std = np.std(z_bootstrap_values, ddof=1) # écart-type corrigé de Bessel
+    intercept_mean = np.mean(intercept_bootstrap_values)
+    
+    # =================================================================
+    # GRAPHIQUE 1 : Le nuage de points Bootstrap et la régression
+    # =================================================================
+    plt.figure(figsize=(9, 6))
+    
+    # Tracer le "nuage" de points avec une forte transparence (alpha)
+    for L in tailles_L:
+        x_vals = np.full(n_boot, np.log(L))
+        y_vals = np.log(all_tau_boot[L])
+        # Étiquette unique pour la légende
+        label = "Bootstrap samples" if L == tailles_L[0] else ""
+        plt.scatter(x_vals, y_vals, color='gray', alpha=0.1, s=20, label=label)
+        
+    # Tracer les points moyens
+    mean_log_tau_per_L = [np.mean(np.log(all_tau_boot[L])) for L in tailles_L]
+    plt.plot(log_L, mean_log_tau_per_L, 'o', color='royalblue', markersize=8, label="Average $\\ln(\\tau)$")
+    
+    # Tracer la droite de régression moyenne
+    fit_line = z_mean * log_L + intercept_mean
+    plt.plot(log_L, fit_line, 'r--', linewidth=2, label=f"Fit: $z = {z_mean:.3f} \pm {z_std:.3f}$")
+    
+    plt.xlabel("$\ln(L)$", fontsize=12)
+    plt.ylabel("$\ln(\\tau)$", fontsize=12)
+    #plt.title("Nuage de dispersion Bootstrap des temps de corrélation", fontsize=14)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.show()
+
+    # =================================================================
+    # GRAPHIQUE 2 : Histogramme de la distribution de z
+    # =================================================================
+    plt.figure(figsize=(8, 5))
+    plt.hist(z_bootstrap_values, bins=20, color='mediumseagreen', edgecolor='black', alpha=0.7)
+    plt.axvline(z_mean, color='red', linestyle='dashed', linewidth=2, label=f"Moyenne: {z_mean:.3f}")
+    plt.axvline(z_mean - z_std, color='black', linestyle='dotted', linewidth=2, label=f"$\pm 1 \sigma$ ({z_std:.3f})")
+    plt.axvline(z_mean + z_std, color='black', linestyle='dotted', linewidth=2)
+    
+    plt.xlabel("Exposant dynamique estimé $z^*$", fontsize=12)
+    plt.ylabel(f"Fréquence (sur {n_boot} tirages)", fontsize=12)
+    plt.title("Distribution Bootstrap de l'exposant dynamique $z$", fontsize=14)
+    plt.legend(fontsize=11)
+    plt.grid(True, linestyle=':', alpha=0.7)
+    plt.show()
+    
+    return z_mean, z_std
+
+
+
+
+# === Phase de collecte des données ===
+tailles_L = [50, 100, 150, 200]
+beta_critique = 1.0 / 2.269185
+nb_mesures = 15000
+B = 3000 # nombre de batchs
+l = 200 # longueur des blocs
+
+# Dictionnaire pour stocker les séries temporelles brutes
+donnees_brutes = {}
+
+for L in tailles_L:
+    print(f"\nSimulation Wolff pour L = {L}...")
+    modele = Modele_Ising(taille=L, energie_interaction=1.0, champ=0.0)
+    
+    # 1. Thermalisation (100 MCS)
+    for _ in range(100):
+        spins_flipped = 0
+        while spins_flipped < L**2:
+            spins_flipped += modele.Wolff_step(beta_critique)
+            
+    # 2. Collecte des mesures
+    magnetizations = np.zeros(nb_mesures)
+    for i in range(nb_mesures):
+        spins_flipped = 0
+        while spins_flipped < L**2:
+            spins_flipped += modele.Wolff_step(beta_critique)
+        magnetizations[i] = abs(modele.m) 
+        
+    # Stockage des données brutes
+    donnees_brutes[L] = magnetizations
+
+# === Phase d'analyse Bootstrap ===
+
+z_final, erreur_z_final = estimate_z_bootstrap_end_to_end(
+    dict_magnetizations=donnees_brutes, 
+    tailles_L=tailles_L, 
+    n_boot=B, 
+    block_size=l
+)
+
+print(f"\n==========================================")
+print(f"Résultat final (Bootstrap) : z = {z_final:.3f} ± {erreur_z_final:.3f}")
+print(f"==========================================")
+
+
+
+
+"""
 #
 # Test complet avec Niedermayer pour différentes tailles de grille pour estimer z
 #
@@ -569,4 +733,4 @@ for k, E0 in enumerate(valeurs_E0):
 # Calcul final
 for i, E0 in enumerate(valeurs_E0):
     z_estime, erreur_z = estimate_dynamic_exponent_z(tailles_L, mesures_tau_int[i])
-    print(f"\nRésultat final (pour E0 = {E0}) : z = {z_estime:.3f} +/- {erreur_z:.3f}")
+    print(f"\nRésultat final (pour E0 = {E0}) : z = {z_estime:.3f} +/- {erreur_z:.3f}")"""
