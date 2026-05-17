@@ -1,3 +1,3 @@
 # Numerical Study of the 2D Ising Model
 
-Simulations numériques en physique statistique.
+(description à compléter + fichiers à trier pour plus de clarté)
