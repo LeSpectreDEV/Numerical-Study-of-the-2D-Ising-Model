@@ -60,6 +60,9 @@ ti.init(arch=ti.gpu)
 @ti.data_oriented
 class Modele_Ising_GPU:
     def __init__(self, taille, J, h, nb_mesures):
+        # Avec des conditions aux limites périodiques, le damier n'est cohérent
+        # (aucun voisin de même couleur) que pour une taille paire.
+        assert taille % 2 == 0, "La taille du réseau doit être paire pour l'algorithme en damier"
         self.N = taille
         self.J = J
         self.h = h

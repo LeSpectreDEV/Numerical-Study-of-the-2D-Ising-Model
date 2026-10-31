@@ -55,8 +55,8 @@ The theory (MCMC convergence, the FK mapping, proofs of detailed balance for Wol
 
 | File | Content | Report |
 |---|---|---|
-| `notebooks/ising_metropolis_wolff_fss.ipynb` | `Modele_Ising` class, Metropolis and Wolff on CPU, observables vs. temperature, finite-size scaling with bootstrap uncertainties | Sec. 4.1, Fig. 3–4, App. C |
-| `scripts/cpu/wolff_autocorrelation.py` | Autocorrelation function of $\|m\|$ and rough estimate of $\tau_\text{exp}$ | Sec. 4.2.1, Fig. 5–6 |
+| `notebooks/ising_metropolis_wolff_fss.ipynb` | `Modele_Ising` class, Metropolis and Wolff on CPU, observables vs. temperature, finite-size scaling with bootstrap uncertainties | Sec. 4.1 (Fig. 3), App. C |
+| `scripts/cpu/wolff_autocorrelation.py` | Autocorrelation function of $\lvert m \rvert$ and rough estimate of $\tau_\text{exp}$ | Sec. 4.2.1, Fig. 5–6 |
 | `scripts/cpu/wolff_dynamic_exponent.py` | $\tau_\text{int}$ for several sizes and $z$ for Wolff, with block bootstrap; also an exploratory version of the Niedermayer algorithm | Sec. 4.2.2, Fig. 8 |
 | `scripts/gpu/metropolis_dynamic_exponent_gpu.py` | Checkerboard Metropolis on GPU, $\tau_\text{int}$ and $z$, with block bootstrap | Sec. 4.2.2, App. A, Fig. 7 |
 | `scripts/gpu/wolff_fss_bootstrap_gpu.py` | Thousands of independent Wolff simulations in parallel on GPU, $\beta/\nu$ and $\gamma/\nu$ with bootstrap | Sec. 4.1, App. A |
@@ -81,7 +81,7 @@ Run a script:
 python scripts/cpu/wolff_dynamic_exponent.py
 ```
 
-Simulation parameters (lattice sizes, number of measurements, number of bootstrap samples, etc.) are set at the top of each script's main function. The default values are the ones used for the report, so **a full run can take several hours** (on CPU and on GPU). Lower them for a quick test.
+Simulation parameters (lattice sizes, number of measurements, number of bootstrap samples, etc.) are set at the top of each script's main function. The default values are those of our longest runs (for the two dynamic-exponent scripts, exactly the ones given in the report), so **a full run can take several hours** (on CPU and on GPU). Lower them for a quick test.
 
 The GPU scripts call `ti.init(arch=ti.gpu)`. Taichi then picks CUDA, Vulkan or Metal depending on the machine, and falls back to the CPU if no GPU is available. We ran them on an AMD Radeon RX 5600 XT (Vulkan backend) under Windows. Some settings, such as the batch sizes and the frequent `ti.sync()` calls, exist to stay within that card's VRAM and to avoid the Windows GPU timeout (TDR).
 

@@ -119,6 +119,10 @@ class Modele_Ising:
         """
         Effectue une étape de l'algorithme de Niedermayer.
         Retourne la taille de l'amas exploré (pour l'horloge MCS).
+
+        Avec cette paramétrisation, le bilan détaillé n'est vérifié que pour
+        0 <= E0 <= 2J : E0 = 2J redonne l'algorithme de Wolff (acceptation
+        toujours égale à 1) et E0 = 0 l'algorithme de Metropolis (amas d'un seul spin).
         """
         # 1. Probabilité d'ajout et facteur d'acceptation
         p_add = 1.0 - np.exp(-beta * E0)
@@ -470,7 +474,7 @@ def experience_wolff_bootstrap(tailles_L=(50, 100, 150, 200), nb_mesures=15000, 
     print("==========================================")
 
 
-def experience_niedermayer(valeurs_E0=(-1/2, -1/4, 0, 1/4), tailles_L=(50, 100, 150, 200), nb_mesures=1000):
+def experience_niedermayer(valeurs_E0=(0.5, 1.0, 1.5, 2.0), tailles_L=(50, 100, 150, 200), nb_mesures=1000):
     """(Exploratoire, non présenté dans le rapport) Estimation de z pour l'algorithme de Niedermayer."""
     tailles_L = list(tailles_L)
     beta_critique = 1.0 / 2.269185
