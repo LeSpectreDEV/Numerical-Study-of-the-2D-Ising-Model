@@ -1,0 +1,6 @@
+numpy
+scipy
+matplotlib
+tqdm
+jupyter        # to run the notebook
+taichi         # GPU scripts only (scripts/gpu/); wheels available up to Python 3.12
